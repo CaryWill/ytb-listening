@@ -1,0 +1,19 @@
+/* 覆盖 Ant Design 暗色主题下的输入框样式 */
+.ant-input {
+  color: #fff !important;
+}
+
+.ant-input::placeholder {
+  color: #555 !important;
+}
+
+/* Sider 高度撑满 */
+.ant-layout-sider {
+  height: 100%;
+}
+
+/* 字幕面板内的 Ant Design Tag 不显示边框 */
+.subtitle-time-tag .ant-tag {
+  border: none;
+  background: transparent;
+}
