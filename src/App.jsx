@@ -16,10 +16,12 @@ import {
   LoadingOutlined,
   WifiOutlined,
   DisconnectOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons'
 import VideoPlayer from './components/VideoPlayer'
 import SubtitlePanel from './components/SubtitlePanel'
 import AnkiModal from './components/AnkiModal'
+import ManualSubtitleModal from './components/ManualSubtitleModal'
 import { fetchSubtitles, extractVideoId, findActiveSubtitleIndex } from './services/subtitle'
 import { checkAnkiConnect } from './services/anki'
 import './App.css'
@@ -39,6 +41,9 @@ export default function App() {
   // Anki 制卡弹窗状态
   const [ankiModalOpen, setAnkiModalOpen] = useState(false)
   const [ankiCardData, setAnkiCardData] = useState(null)
+
+  // 手动输入字幕弹窗状态
+  const [manualSubtitleModalOpen, setManualSubtitleModalOpen] = useState(false)
 
   const playerRef = useRef(null)
   const [messageApi, contextHolder] = message.useMessage()
@@ -109,6 +114,14 @@ export default function App() {
   const handleSubtitleClick = useCallback((startTime) => {
     playerRef.current?.seekTo(startTime)
   }, [])
+
+  // 手动导入字幕 → 直接设置字幕列表
+  const handleManualSubtitlesLoaded = useCallback((parsedSubtitles) => {
+    setSubtitles(parsedSubtitles)
+    setActiveSubtitleIndex(-1)
+    setSubtitleError('')
+    messageApi.success(`已导入 ${parsedSubtitles.length} 条字幕`)
+  }, [messageApi])
 
   // 点击制卡按钮 → 打开 Anki 弹窗
   const handleCreateCard = useCallback(
@@ -183,6 +196,22 @@ export default function App() {
           </Button>
         </Space.Compact>
 
+        {/* 手动输入字幕入口 */}
+        <Tooltip title="手动粘贴 SRT 或纯文本字幕（网络无法自动加载时使用）">
+          <Button
+            icon={<FileTextOutlined />}
+            onClick={() => setManualSubtitleModalOpen(true)}
+            style={{
+              background: '#2a2a2a',
+              borderColor: '#3a3a3a',
+              color: '#aaa',
+              flexShrink: 0,
+            }}
+          >
+            手动字幕
+          </Button>
+        </Tooltip>
+
         {/* AnkiConnect 状态指示 */}
         <Tooltip
           title={ankiConnected ? 'AnkiConnect 已连接' : 'AnkiConnect 未连接（请启动 Anki）'}
@@ -240,9 +269,23 @@ export default function App() {
           {/* 字幕加载错误提示 */}
           {subtitleError && (
             <Alert
-              message="字幕加载失败"
-              description={subtitleError}
-              type="error"
+              message="字幕自动加载失败"
+              description={
+                <span>
+                  {subtitleError}
+                  {'　'}
+                  <a
+                    onClick={() => {
+                      setSubtitleError('')
+                      setManualSubtitleModalOpen(true)
+                    }}
+                    style={{ color: '#1677ff', cursor: 'pointer' }}
+                  >
+                    点击手动粘贴字幕 →
+                  </a>
+                </span>
+              }
+              type="warning"
               showIcon
               closable
               onClose={() => setSubtitleError('')}
@@ -300,6 +343,13 @@ export default function App() {
         open={ankiModalOpen}
         onClose={() => setAnkiModalOpen(false)}
         cardData={ankiCardData}
+      />
+
+      {/* 手动输入字幕弹窗 */}
+      <ManualSubtitleModal
+        open={manualSubtitleModalOpen}
+        onClose={() => setManualSubtitleModalOpen(false)}
+        onSubtitlesLoaded={handleManualSubtitlesLoaded}
       />
     </Layout>
   )

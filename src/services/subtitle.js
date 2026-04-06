@@ -1,97 +1,49 @@
 /**
- * 解析 YouTube 字幕 XML 文本
- * @param {string} xmlText
- * @returns {Array<{text: string, start: number, duration: number}>}
- */
-function parseTranscriptXml(xmlText) {
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(xmlText, 'text/xml')
-  const textNodes = doc.querySelectorAll('text')
-
-  return Array.from(textNodes).map((node) => {
-    const start = parseFloat(node.getAttribute('start') || '0')
-    const duration = parseFloat(node.getAttribute('dur') || '0')
-    // 解码 HTML 实体（&amp; &quot; 等）
-    const textarea = document.createElement('textarea')
-    textarea.innerHTML = node.textContent || ''
-    const text = textarea.value.trim()
-    return { text, start, duration }
-  }).filter((item) => item.text.length > 0)
-}
-
-/**
- * 从 YouTube 视频页面获取字幕 track 列表
- * 通过 Vite 代理 /ytb-watch 转发请求，解决 CORS 问题
+ * 通过 youtube-transcript-api vercel 服务获取字幕（纯前端，无需 API Key，免费）
+ * 返回纯文本，无时间戳，用 parsePlainText 均匀分配时间
  * @param {string} videoId
- * @returns {Promise<Array>} 字幕 track 列表
- */
-async function fetchCaptionTracks(videoId) {
-  const response = await fetch(`/ytb-watch?v=${videoId}`)
-
-  if (!response.ok) {
-    throw new Error(`无法访问 YouTube 视频页面: ${response.status}`)
-  }
-
-  const html = await response.text()
-
-  // 从页面 HTML 中提取 captionTracks JSON
-  const match = html.match(/"captionTracks":(\[.*?\])/)
-  if (!match) {
-    throw new Error('该视频没有可用字幕')
-  }
-
-  try {
-    return JSON.parse(match[1])
-  } catch {
-    throw new Error('字幕数据解析失败')
-  }
-}
-
-/**
- * 直接在浏览器端获取 YouTube 字幕（绕过后端，走浏览器系统代理）
- * 优先获取日语字幕，回退到自动生成字幕，最后回退到任意可用字幕
- * @param {string} videoUrl - YouTube 视频链接或视频 ID
- * @param {string} lang - 字幕语言，默认 'ja'（日语）
  * @returns {Promise<Array<{text: string, start: number, duration: number}>>}
  */
-export async function fetchSubtitles(videoUrl, lang = 'ja') {
+async function fetchSubtitlesViaVercel(videoId) {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`
+  const response = await fetch('https://youtube-transcript-api-tau-one.vercel.app/transcript', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video_url: videoUrl }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    throw new Error(`字幕服务请求失败 (${response.status})：${errorText}`)
+  }
+
+  const data = await response.json()
+  if (!data.transcript) {
+    throw new Error('字幕服务未返回字幕内容')
+  }
+
+  console.log('[subtitle] 通过 vercel 服务获取字幕成功')
+  return parsePlainText(data.transcript)
+}
+
+/**
+ * 获取 YouTube 字幕（纯前端方案，调用 vercel 开源字幕服务）
+ * 失败时抛出错误，提示用户手动导入字幕
+ * @param {string} videoUrl - YouTube 视频链接或视频 ID
+ * @returns {Promise<Array<{text: string, start: number, duration: number}>>}
+ */
+export async function fetchSubtitles(videoUrl) {
   const videoId = extractVideoId(videoUrl)
   if (!videoId) {
     throw new Error('无效的 YouTube 链接或视频 ID')
   }
 
-  const tracks = await fetchCaptionTracks(videoId)
-
-  if (tracks.length === 0) {
-    throw new Error('该视频没有可用字幕')
+  try {
+    return await fetchSubtitlesViaVercel(videoId)
+  } catch (error) {
+    console.warn('[subtitle] 自动获取字幕失败:', error.message)
+    throw new Error('自动获取字幕失败，请点击「手动字幕」按钮粘贴字幕内容')
   }
-
-  // 按优先级选择字幕 track：
-  // 1. 指定语言的手动字幕
-  // 2. 指定语言的自动生成字幕（kind: asr）
-  // 3. 任意语言的手动字幕
-  // 4. 任意可用字幕
-  const manualTrack = tracks.find((t) => t.languageCode === lang && t.kind !== 'asr')
-  const asrTrack = tracks.find((t) => t.languageCode === lang && t.kind === 'asr')
-  const anyManualTrack = tracks.find((t) => t.kind !== 'asr')
-  const selectedTrack = manualTrack || asrTrack || anyManualTrack || tracks[0]
-
-  console.log(
-    `[subtitle] 使用字幕: ${selectedTrack.name?.simpleText || selectedTrack.languageCode}`,
-    selectedTrack.kind === 'asr' ? '(自动生成)' : '(手动)',
-  )
-
-  // 获取字幕 XML 内容
-  // baseUrl 格式：https://www.youtube.com/api/timedtext?...
-  // 替换为 /ytb-timedtext?... 走 Vite 代理，避免和 /api（后端）冲突
-  const subtitleUrl = selectedTrack.baseUrl.replace('https://www.youtube.com/api/timedtext', '/ytb-timedtext')
-  const xmlResponse = await fetch(subtitleUrl)
-  if (!xmlResponse.ok) {
-    throw new Error(`字幕内容获取失败: ${xmlResponse.status}`)
-  }
-
-  const xmlText = await xmlResponse.text()
-  return parseTranscriptXml(xmlText)
 }
 
 /**
@@ -148,4 +100,94 @@ export function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+/**
+ * 将 SRT 时间字符串（00:01:23,456）转换为秒数
+ * @param {string} timeStr
+ * @returns {number}
+ */
+function parseSrtTime(timeStr) {
+  const [hms, ms] = timeStr.trim().split(',')
+  const [hours, minutes, seconds] = hms.split(':').map(Number)
+  return hours * 3600 + minutes * 60 + seconds + Number(ms || 0) / 1000
+}
+
+/**
+ * 解析 SRT 格式字幕文本
+ * @param {string} srtText
+ * @returns {Array<{text: string, start: number, duration: number}>}
+ */
+export function parseSrt(srtText) {
+  const blocks = srtText.trim().split(/\n\s*\n/)
+  const result = []
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n')
+    if (lines.length < 2) continue
+
+    // 找到时间轴行（格式：00:00:00,000 --> 00:00:00,000）
+    const timeLineIndex = lines.findIndex((line) => line.includes('-->'))
+    if (timeLineIndex === -1) continue
+
+    const timeLine = lines[timeLineIndex]
+    const timeParts = timeLine.split('-->')
+    if (timeParts.length !== 2) continue
+
+    const start = parseSrtTime(timeParts[0])
+    const end = parseSrtTime(timeParts[1])
+    const duration = end - start
+
+    // 时间轴之后的所有行都是字幕文本
+    const text = lines
+      .slice(timeLineIndex + 1)
+      .join('\n')
+      .replace(/<[^>]+>/g, '') // 去除 HTML 标签（如 <i>、<b>）
+      .trim()
+
+    if (text.length > 0) {
+      result.push({ text, start, duration })
+    }
+  }
+
+  return result
+}
+
+/**
+ * 解析纯文本字幕（每行一句，自动分配时间）
+ * 适合从 YouTube 字幕面板直接复制的纯文字内容
+ * @param {string} plainText
+ * @param {number} secondsPerLine - 每行默认时长（秒），默认 3 秒
+ * @returns {Array<{text: string, start: number, duration: number}>}
+ */
+export function parsePlainText(plainText, secondsPerLine = 3) {
+  const lines = plainText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+
+  return lines.map((text, index) => ({
+    text,
+    start: index * secondsPerLine,
+    duration: secondsPerLine,
+  }))
+}
+
+/**
+ * 自动检测字幕格式并解析
+ * 支持 SRT 格式和纯文本格式
+ * @param {string} rawText
+ * @returns {Array<{text: string, start: number, duration: number}>}
+ */
+export function parseManualSubtitle(rawText) {
+  const trimmed = rawText.trim()
+  if (!trimmed) return []
+
+  // 检测是否为 SRT 格式（包含 --> 时间轴）
+  if (/\d{2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,\.]\d{3}/.test(trimmed)) {
+    return parseSrt(trimmed)
+  }
+
+  // 否则按纯文本处理
+  return parsePlainText(trimmed)
 }
