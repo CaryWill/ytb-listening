@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import { YoutubeTranscript } from 'youtube-transcript'
+import { YoutubeTranscript } from 'youtube-transcript/dist/youtube-transcript.esm.js'
 
 const app = express()
 const PORT = 3001
