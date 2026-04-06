@@ -1,6 +1,12 @@
 import express from 'express'
 import cors from 'cors'
 import { YoutubeTranscript } from 'youtube-transcript/dist/youtube-transcript.esm.js'
+import { ProxyAgent, setGlobalDispatcher } from 'undici'
+
+// 让 Node.js 全局 fetch 走本地代理（解决国内无法访问 YouTube 的问题）
+const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || 'http://127.0.0.1:8080'
+setGlobalDispatcher(new ProxyAgent(PROXY_URL))
+console.log(`[server] 使用代理: ${PROXY_URL}`)
 
 const app = express()
 const PORT = 3001

@@ -53,6 +53,20 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      // 代理 YouTube 请求，解决浏览器 CORS 跨域问题
+      '/ytb-watch': {
+        target: 'https://www.youtube.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ytb-watch/, '/watch'),
+        headers: {
+          'Accept-Language': 'ja,en;q=0.9',
+        },
+      },
+      '/ytb-api': {
+        target: 'https://www.youtube.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ytb-api/, ''),
+      },
     },
   },
 })
