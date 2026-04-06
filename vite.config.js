@@ -62,10 +62,10 @@ export default defineConfig({
           'Accept-Language': 'ja,en;q=0.9',
         },
       },
-      '/ytb-api': {
+      '/ytb-timedtext': {
         target: 'https://www.youtube.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/ytb-api/, ''),
+        rewrite: (path) => path.replace(/^\/ytb-timedtext/, '/api/timedtext'),
       },
     },
   },

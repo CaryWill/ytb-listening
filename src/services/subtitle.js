@@ -82,8 +82,9 @@ export async function fetchSubtitles(videoUrl, lang = 'ja') {
   )
 
   // 获取字幕 XML 内容
-  // baseUrl 是完整的 YouTube URL，通过 /ytb-api 代理转发解决 CORS 问题
-  const subtitleUrl = selectedTrack.baseUrl.replace('https://www.youtube.com', '/ytb-api')
+  // baseUrl 格式：https://www.youtube.com/api/timedtext?...
+  // 替换为 /ytb-timedtext?... 走 Vite 代理，避免和 /api（后端）冲突
+  const subtitleUrl = selectedTrack.baseUrl.replace('https://www.youtube.com/api/timedtext', '/ytb-timedtext')
   const xmlResponse = await fetch(subtitleUrl)
   if (!xmlResponse.ok) {
     throw new Error(`字幕内容获取失败: ${xmlResponse.status}`)
